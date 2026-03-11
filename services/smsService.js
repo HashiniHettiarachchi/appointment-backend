@@ -2,36 +2,48 @@ const twilio = require('twilio');
 
 class SMSService {
   constructor() {
-    if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-      this.client = twilio(
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_AUTH_TOKEN
-      );
-      this.fromNumber = process.env.TWILIO_PHONE_NUMBER;
-      this.enabled = true;
-      console.log('✅ SMS Service enabled');
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    
+    // Check if Twilio credentials are properly configured
+    if (accountSid && authToken && 
+        accountSid !== 'your-account-sid' && 
+        authToken !== 'your-auth-token' &&
+        accountSid.startsWith('AC')) {
+      
+      try {
+        this.client = twilio(accountSid, authToken);
+        this.fromNumber = process.env.TWILIO_PHONE_NUMBER;
+        this.enabled = true;
+        console.log('✅ SMS Service enabled (Twilio)');
+      } catch (error) {
+        this.enabled = false;
+        console.warn('⚠️ SMS Service disabled (Twilio init failed)');
+      }
     } else {
       this.enabled = false;
-      console.warn('⚠️ SMS disabled (no Twilio credentials)');
+      console.warn('⚠️ SMS Service disabled (no valid Twilio credentials)');
     }
   }
 
   async sendSMS(to, message) {
     if (!this.enabled) {
-      console.log('📱 SMS disabled');
-      return { success: false };
+      console.log('📱 SMS disabled, would have sent:', message.substring(0, 50) + '...');
+      return { success: false, reason: 'SMS service not configured' };
     }
 
     if (!to) {
-      console.log('⚠️ No phone number');
-      return { success: false };
+      console.log('⚠️ No phone number provided');
+      return { success: false, reason: 'No phone number' };
     }
 
     try {
+      const formattedNumber = to.startsWith('+') ? to : `+${to}`;
+
       const result = await this.client.messages.create({
         body: message,
         from: this.fromNumber,
-        to: to
+        to: formattedNumber
       });
 
       console.log('✅ SMS sent:', result.sid);
@@ -64,6 +76,22 @@ class SMSService {
     const message = `❌ Cancelled\n\nService: ${service.name}\nDate: ${new Date(appointmentDate).toLocaleDateString()}\nTime: ${startTime}`;
 
     return await this.sendSMS(recipient.phone, message);
+  }
+
+  async sendAppointmentReminder(appointment) {
+    const { customer, service, appointmentDate, startTime } = appointment;
+
+    const message = `⏰ Reminder: Your appointment is tomorrow!\n\nService: ${service.name}\nDate: ${new Date(appointmentDate).toLocaleDateString()}\nTime: ${startTime}\n\nSee you soon!`;
+
+    return await this.sendSMS(customer.phone, message);
+  }
+
+  async sendPaymentConfirmation(appointment) {
+    const { customer, amount, service } = appointment;
+
+    const message = `💳 Payment Received!\n\nAmount: $${amount}\nService: ${service.name}\n\nThank you!`;
+
+    return await this.sendSMS(customer.phone, message);
   }
 }
 
