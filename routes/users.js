@@ -331,4 +331,63 @@ router.delete('/staff/:id', auth, isAdmin, async (req, res) => {
   }
 });
 
+// @route   POST /api/users
+// @desc    Admin creates a new user
+// @access  Private (Admin)
+router.post('/', auth, isAdmin, async (req, res) => {
+  try {
+    const { name, email, password, phone, role, specialization } = req.body;
+
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(400).json({ message: 'Email already in use' });
+
+    const bcrypt = require('bcryptjs');
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password || 'Password@123', salt);
+
+    const userData = {
+      name,
+      email,
+      password: hashedPassword,
+      phone,
+      role: role || 'customer',
+      isApproved: true, // admin-created users are auto-approved
+    };
+
+    if ((role === 'staff') && specialization) {
+      userData.specialization = specialization;
+    }
+
+    const user = new User(userData);
+    await user.save();
+
+    const saved = await User.findById(user._id).select('-password');
+    res.status(201).json({ message: 'User created successfully', user: saved });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// @route   DELETE /api/users/:id
+// @desc    Admin deletes any user
+// @access  Private (Admin)
+router.delete('/:id', auth, isAdmin, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Prevent admin from deleting themselves
+    if (req.user.userId === req.params.id) {
+      return res.status(400).json({ message: 'You cannot delete your own account' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 module.exports = router;
